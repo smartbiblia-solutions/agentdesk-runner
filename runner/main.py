@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Body
 import subprocess
 import uuid
 
@@ -9,11 +9,17 @@ def health():
     return {"status": "ok"}
 
 @app.post("/run")
-def run_cmd(cmd: str):
-    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+def run_cmd(cmd: str = Body(embed=True)):
+    proc = subprocess.run(
+        cmd,
+        shell=True,
+        capture_output=True,
+        text=True
+    )
     return {
         "stdout": proc.stdout,
-        "stderr": proc.stderr
+        "stderr": proc.stderr,
+        "returncode": proc.returncode
     }
 
 @app.websocket("/stream")
