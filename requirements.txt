@@ -2,4 +2,5 @@ fastapi
 uvicorn
 python-multipart
 websockets
+pyyaml
 nanobot-ai

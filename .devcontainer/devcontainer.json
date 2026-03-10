@@ -6,13 +6,20 @@
     "ghcr.io/devcontainers/features/node:1": {}
   },
 
-  "postCreateCommand": "pip install -r requirements.txt && curl -LsSf https://astral.sh/uv/install.sh | sh",
+  "postCreateCommand": "pip install -r requirements.txt && curl -LsSf https://astral.sh/uv/install.sh | sh && nanobot onboard || true",
 
   "forwardPorts": [8000],
 
-  "portsAttributes": {
+   "portsAttributes": {
     "8000": {
-      "label": "agentdesk-runner"
+      "label": "agentdesk-runner",
+      "onAutoForward": "notify"
     }
+  },
+
+  "remoteEnv": {
+    "OPENAI_API_KEY":     "${localEnv:OPENAI_API_KEY}",
+    "ANTHROPIC_API_KEY":  "${localEnv:ANTHROPIC_API_KEY}",
+    "OPENROUTER_API_KEY": "${localEnv:OPENROUTER_API_KEY}"
   }
 }
