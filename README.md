@@ -117,7 +117,6 @@ runners:
 
   # GitHub Codespace:
   # codespace:
-  #   type: agentdesk_runner
+  #   type: vps # or agentdesk_runner
   #   host: xxxxx-8000.app.github.dev
-  #   port: 443
 ```
