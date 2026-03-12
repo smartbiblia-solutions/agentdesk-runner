@@ -491,25 +491,37 @@ async def _execute_run(
         await _sys_log(run_id, f'skill={skill or "none"} | prompt: {final_prompt[:120]}')
 
         # 3. Bootstrap nanobot
-        from nanobot.config.loader             import load_config
-        from nanobot.bus.queue                 import MessageBus
-        from nanobot.agent.loop                import AgentLoop
-        from nanobot.providers.litellm_provider import LiteLLMProvider
-        from nanobot.session.manager           import SessionManager
-        from nanobot.channels.manager          import ChannelManager
+        from nanobot.config.loader              import load_config
+        from nanobot.bus.queue                  import MessageBus
+        from nanobot.agent.loop                 import AgentLoop
+        from nanobot.session.manager            import SessionManager
+        from nanobot.channels.manager           import ChannelManager
 
         workspace = bundle_path / 'workspace'
         if not workspace.exists():
             workspace = bundle_path
 
-        nb_config   = load_config()
-        bus         = MessageBus()
-        provider    = LiteLLMProvider(nb_config.providers)
+        nb_config = load_config()
+        bus       = MessageBus()
+
+        # Use nanobot's own _make_provider() — it resolves api_key, api_base,
+        # and provider_name from the loaded config exactly as the gateway does.
+        # LiteLLMProvider.__init__ takes (api_key, api_base, default_model, ...)
+        # as individual strings — NEVER the ProvidersConfig object.
+        try:
+            from nanobot.cli.commands import _make_provider
+            provider = _make_provider(nb_config)
+        except (ImportError, AttributeError):
+            # Fallback: construct with no args — nanobot will read credentials
+            # from ~/.nanobot/config.json which we already wrote above.
+            from nanobot.providers.litellm_provider import LiteLLMProvider
+            provider = LiteLLMProvider()
+
         session_mgr = SessionManager(workspace)
 
-        defaults    = (nb_config.agents.defaults
-                       if nb_config.agents and nb_config.agents.defaults else None)
-        agent_loop  = AgentLoop(
+        defaults   = (nb_config.agents.defaults
+                      if nb_config.agents and nb_config.agents.defaults else None)
+        agent_loop = AgentLoop(
             bus             = bus,
             provider        = provider,
             workspace       = workspace,
@@ -662,52 +674,57 @@ async def _sys_log(run_id: str, text: str) -> None:
 
 def _write_nanobot_config(bundle_path: Path) -> None:
     """
-    Merge agent.md frontmatter into ~/.nanobot/config.json.
-    API keys are preserved from the existing config / env vars.
-    Secrets never travel through bundles.
+    Write ONLY the agent runtime parameters (model, temperature, maxTokens)
+    into ~/.nanobot/config.json under agents.defaults.
+
+    Design contract — logic-only sync:
+      AgentDesk owns:     model, temperature, max_tokens  (from agent.md frontmatter)
+      Runner admin owns:  providers block (API keys, base_urls, etc.)
+
+    The providers block is NEVER modified here — it survives every run intact.
+    This means:
+      • API keys stay on the runner, set up once manually by the runner admin
+      • The AgentDesk chat model and the agent execution model are independent
+      • No credentials ever travel through bundles
+
+    A deep-copy of the existing config is used so ALL nested structures
+    (providers, channels, cron, etc.) are fully preserved.
     """
-    meta     = _read_frontmatter(bundle_path / 'agent.md')
+    import copy
+
+    meta = _read_frontmatter(bundle_path / 'agent.md')
+
+    # Deep-copy entire existing config — providers, channels, etc. untouched
     existing: dict = {}
     if NANOBOT_CONFIG.exists():
         try:
             existing = json.loads(NANOBOT_CONFIG.read_text()) or {}
         except json.JSONDecodeError:
-            log.warning('Existing config.json invalid — overwriting')
+            log.warning('Existing config.json invalid — starting from empty config')
 
-    config = dict(existing)
+    config = copy.deepcopy(existing)
+
+    # Write ONLY agents.defaults — never touch providers block
+    defaults = config.setdefault('agents', {}).setdefault('defaults', {})
 
     model = meta.get('model')
     if model:
-        config.setdefault('agents', {}).setdefault('defaults', {})['model'] = model
+        defaults['model'] = model
 
     temp = meta.get('temperature')
     if temp is not None:
-        config.setdefault('agents', {}).setdefault('defaults', {})['temperature'] = temp
+        defaults['temperature'] = temp
 
     max_tok = meta.get('max_tokens')
     if max_tok is not None:
-        config.setdefault('agents', {}).setdefault('defaults', {})['maxTokens'] = max_tok
-
-    provider = meta.get('provider', '').lower()
-    _ENV = {
-        'openai':     'OPENAI_API_KEY',
-        'anthropic':  'ANTHROPIC_API_KEY',
-        'openrouter': 'OPENROUTER_API_KEY',
-        'groq':       'GROQ_API_KEY',
-        'mistral':    'MISTRAL_API_KEY',
-        'ollama':     None,
-        'albert':     'ALBERT_API_KEY',
-    }
-    if provider and provider in _ENV:
-        config.setdefault('providers', {}).setdefault(provider, {})
-        env_key = _ENV[provider]
-        if env_key:
-            env_val = os.environ.get(env_key)
-            if env_val and not config['providers'][provider].get('apiKey'):
-                config['providers'][provider]['apiKey'] = env_val
+        defaults['maxTokens'] = max_tok
 
     NANOBOT_CONFIG.write_text(json.dumps(config, indent=2))
-    log.info(f'config.json updated — model={model} provider={provider}')
+    log.info(
+        f'config.json updated — agents.defaults: '
+        f'model={model} temperature={temp} maxTokens={max_tok} '
+        f'| providers block: untouched ({len(config.get("providers", {}))} entries)'
+    )
 
 
 def _compose_prompt(bundle_path: Path, base_prompt: str, skill: str | None) -> str:

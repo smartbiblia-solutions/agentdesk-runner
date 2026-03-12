@@ -1,0 +1,5 @@
+.venv/
+.git/
+.devcontainer
+run.bat
+docker.sh
