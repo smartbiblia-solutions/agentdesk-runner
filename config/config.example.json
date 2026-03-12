@@ -140,7 +140,7 @@
     },
     "providers": {
       "custom": {
-        "apiKey": "sk-...",
+        "apiKey": "",
         "apiBase": "https://albert.api.etalab.gouv.fr/v1",
         "extraHeaders": null
       },
@@ -155,7 +155,7 @@
         "extraHeaders": null
       },
       "openai": {
-        "apiKey": "sk-...",
+        "apiKey": "",
         "apiBase": "https://api.openai.com/v1",
         "extraHeaders": null
       },
