@@ -1,0 +1,4 @@
+*.bat
+*.sh
+config/config.json
+!config/config.example.json
